@@ -7,13 +7,12 @@
 #
 # Author: Jacqueline Rudolph
 #
-# Last Update: 26 Mar 2020
+# Last Update: 31 Mar 2020
 #
 ###################################################################################################################################  
 
   #Things to work on:
-    #We could add interactions to the models
-    #Why are the AFT model predictions so far off
+    #Why are the AFT model predictions so far off?
 
 setwd("/Users/jacquelinerudolph/Documents/Pitt Projects/Natural Course/data")
 
@@ -55,30 +54,38 @@ eager <- read.table(file="eager_base.txt", sep="\t", header=TRUE)
 # What was the observed survival?
   
 surv_obs <- survfit(Surv(week, delta) ~ 1, data=eager_last)
+  surv_obs_exp <- survfit(Surv(week, delta) ~ bmi_bin, data=eager_last)
   
 
 ###################################################################################################################################  
 # Run parametric g-formula
   
 #Model exposure and the outcome
-  #Multinomial model for exposure
+  #Model for exposure
+  mod.a1 <- glm(bmi_bin ~ bs(age, df=3) + bs(BPS, df=3) + bs(BPD, df=3) + white +
+                  high_school + married + employed + as.factor(site) + as.factor(income) + as.factor(exercise) +
+                  as.factor(alcohol) + smoke + treatment + as.factor(week), family=binomial(link="logit"), data=eager)
 
   #Specify T and C distributions parametrically
   mod.c1 <- survreg(Surv(week, drop) ~ bmi_bin + bs(age, df=3) + bs(BPS, df=3) + bs(BPD, df=3) + white +
                           high_school + married + employed + as.factor(site) + as.factor(income) + as.factor(exercise) +
-                          as.factor(alcohol) + smoke + treatment, data=eager_last, dist="weibull")
+                          as.factor(alcohol) + smoke + treatment,
+                          dist="weibull", data=eager_last)
   mod.t1 <- survreg(Surv(week, delta) ~ bmi_bin + bs(age, df=3) + bs(BPS, df=3) + bs(BPD, df=3) + white +
-                        high_school + married + employed + as.factor(site) + as.factor(income) + as.factor(exercise) +
-                        as.factor(alcohol) + smoke + treatment, data=eager_last, dist="weibull")
+                          high_school + married + employed + as.factor(site) + as.factor(income) + as.factor(exercise) +
+                          as.factor(alcohol) + smoke + treatment,
+                          dist="weibull", data=eager_last)
   
-  #Pooled logistic for T and C
+  #Pooled logistic for T and C (fit was slightly better without interaction)
   mod.c2 <- glm(drop ~ bmi_bin + bs(age, df=3) + bs(BPS, df=3) + bs(BPD, df=3) + white +
                   high_school + married + employed + as.factor(site) + as.factor(income) + as.factor(exercise) +
-                  as.factor(alcohol) + smoke + treatment + as.factor(week), family=binomial(link="logit"), data=eager)
+                  as.factor(alcohol) + smoke + treatment + as.factor(week),# + I(bmi_bin*bs(week, df=3)),
+                  family=binomial(link="logit"), data=eager)
   
   mod.t2 <- glm(delta ~ bmi_bin + bs(age, df=3) + bs(BPS, df=3) + bs(BPD, df=3) + white +
                   high_school + married + employed + as.factor(site) + as.factor(income) + as.factor(exercise) +
-                  as.factor(alcohol) + smoke + treatment + as.factor(week), family=binomial(link="logit"), data=eager)
+                  as.factor(alcohol) + smoke + treatment + as.factor(week),# + I(bmi_bin*bs(week, df=3)),
+                  family=binomial(link="logit"), data=eager)
   
 #Simple implementation: use model predictions given observed exposure and covariates
   #Predict survival from AFT model
@@ -100,7 +107,7 @@ surv_obs <- survfit(Surv(week, delta) ~ 1, data=eager_last)
   pred2$delta <- ifelse(pred2$t_pred2==1, 1, 0)
   pred2$last <- as.numeric(!duplicated(pred2$id, fromLast=T))
   surv_gform2 <- survfit(Surv(week, delta) ~ 1, data=pred2[pred2$last==1, ])
-
+  
   
 #Complex implementation: MC resample and reconstruct follow-up
   
@@ -120,11 +127,11 @@ surv_obs <- survfit(Surv(week, delta) ~ 1, data=eager_last)
       c_time <- predict(cmodel, newdata=g_data, type="response")
       y_time <- predict(ymodel, newdata=g_data, type="response")
       #Observed time is the minimum of the above two times
-      time <- min(c_time, y_time) 
-      if (time==y_time & time<=26){
+      week <- min(c_time, y_time) 
+      if (week==y_time & week<=26){
         delta<-1
         drop<- 0
-      } else if (time==c_time & time<=26) {
+      } else if (week==c_time & week<=26) {
         delta <- 0
         drop <- 1
       } else {
@@ -133,7 +140,7 @@ surv_obs <- survfit(Surv(week, delta) ~ 1, data=eager_last)
         time <- 26
       }
       
-      res <- data.frame(id=g_data$id, week=time, delta=delta, drop=drop)
+      res <- data.frame(id=g_data$id, week=week, delta=delta, drop=drop)
       return(res)
       
     } else {
@@ -184,9 +191,51 @@ surv_obs <- survfit(Surv(week, delta) ~ 1, data=eager_last)
 
 
 ###################################################################################################################################  
-# Compare survival curves
+# Compare natural course survival curves to observed
   
-  surv <- list(Observed=surv_obs, Gformula=surv_gform1)
+  surv <- list(Observed=surv_obs, Gformula=surv_gform2)
   ggsurvplot(surv, combine=TRUE, xlim=c(0,K), ylim=c(0, 1.0), break.time.by=5,
              legend=c(0.75,0.95), legend.title="", legend.labs=c("Observed natural course", "G-formula natural course")) 
+  
+
+###################################################################################################################################  
+# Pooled logistic fit well, so let's use that approach to estimate counterfactual outcomes
+  
+  #Set exposure to 0
+  eager0 <- eager
+  eager0$bmi_bin <- 0
+    c0 <- as.numeric(predict(mod.c2, newdata=eager0, type="response") > runif(dim(eager)[1]))
+    t0 <- as.numeric(predict(mod.t2, newdata=eager0, type="response") > runif(dim(eager)[1]))
+    pred0 <- data.frame(id=eager$id, week=eager$week, t0, c0) %>% 
+      group_by(id) %>% 
+      mutate(cumt=cumsum(cumsum(t0)), cumc=cumsum(cumsum(c0)), totcum=cumt+cumc) %>% 
+      filter(totcum<=1 | (totcum==2 & t0==1 & c0==1))
+    pred0$delta <- ifelse(pred0$t0==1, 1, 0)
+    pred0$last <- as.numeric(!duplicated(pred0$id, fromLast=T))
+    effect0 <- survfit(Surv(week, delta) ~ 1, data=pred0[pred0$last==1, ])
+    
+    surv <- list(Observed=surv_obs, Gformula=surv_gform2, unexposed=effect0)
+    ggsurvplot(surv, combine=TRUE, xlim=c(0,K), ylim=c(0, 1.0), break.time.by=5,
+               legend=c(0.75,0.95), legend.title="", legend.labs=c("Observed natural course", "G-formula natural course", 
+                                                                   "All healthy weight or underweight")) 
+ 
+  #Set exposure to 1  
+  eager1 <- eager
+  eager1$bmi_bin <- 1
+    c1 <- as.numeric(predict(mod.c2, newdata=eager1, type="response") > runif(dim(eager)[1]))
+    t1 <- as.numeric(predict(mod.t2, newdata=eager1, type="response") > runif(dim(eager)[1]))
+    pred1 <- data.frame(id=eager$id, week=eager$week, t1, c1) %>% 
+      group_by(id) %>% 
+      mutate(cumt=cumsum(cumsum(t1)), cumc=cumsum(cumsum(c1)), totcum=cumt+cumc) %>% 
+      filter(totcum<=1 | (totcum==2 & t1==1 & c1==1))
+    pred1$delta <- ifelse(pred1$t1==1, 1, 0)
+    pred1$last <- as.numeric(!duplicated(pred1$id, fromLast=T))
+    effect1 <- survfit(Surv(week, delta) ~ 1, data=pred1[pred1$last==1, ])
+    
+    surv <- list(Observed=surv_obs, Gformula=surv_gform2, exposed=effect1)
+    ggsurvplot(surv, combine=TRUE, xlim=c(0,K), ylim=c(0, 1.0), break.time.by=5,
+               legend=c(0.75,0.95), legend.title="", legend.labs=c("Observed natural course", "G-formula natural course", 
+                                                                   "All overweight or obese")) 
+    
+  
   
