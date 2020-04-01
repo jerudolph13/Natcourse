@@ -12,7 +12,9 @@
 ###################################################################################################################################  
 
   #Things to work on:
-    #Why are the AFT model predictions so far off?
+    #Why are the AFT model predictions so far off? I found in the simple simulation that if I used predict() on the survreg
+    # object that my answers were very wrong, but if I used Ashley's formula for getting exponentially distributed var
+    # that my answer was correct
 
 setwd("/Users/jacquelinerudolph/Documents/Pitt Projects/Natural Course/data")
 
@@ -110,14 +112,13 @@ surv_obs <- survfit(Surv(week, delta) ~ 1, data=eager_last)
   
   
 #Complex implementation: MC resample and reconstruct follow-up
-  
   #Take Monte Carlo resample
   MC0 <- select(eager_last, -id, -week, -last, -delta, -drop)
   index <- sample(1:nrow(MC0), montecarlo, replace=TRUE)
   MC<-MC0[index,]
   MC$id<-1:montecarlo
   
-  #Use pgf to reconstruct follow-up for each person
+  #Use pgf function to reconstruct follow-up for each person
   pgf <- function(i, data, cmodel, ymodel, aft, maxint){
     g_data <- data[data$id==i, ]
     week<-drop<-delta<- numeric()

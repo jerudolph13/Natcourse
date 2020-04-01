@@ -1,5 +1,4 @@
 
-
 ###################################################################################################
 #
 # Purpose: For g-formula natural course paper, time-fixed case 1: binary exposure,
@@ -7,13 +6,14 @@
 #
 # Author: Jacqueline Rudolph
 #
-# Last Update: 02 mar 2020
+# Last Update: 01 apr 2020
 #
 ##################################################################################################
 
 # Things I could explore:
 #     - Including more variables than are necessary, esp. interaction terms
-#     - Being flexible in outcome model
+#     - Being flexible in outcome model, even though not necessary
+#     - Leave variables out
 
 packages <- c("survival", "tidyverse", "flexsurv", "survminer")
 
@@ -23,82 +23,141 @@ for (package in packages) {
 }
 
 
-### Simulate data
+###################################################################################################################################  
+# Simulate data
 
 set.seed(123)
-n <- 5000
-montecarlo <- 50000
-K <- 1
+n <- 5000       #Sample size
+K <- 1          #Maximum time
 
-Z1<-Z2<-Z3<-X<-Tv<-Y <- rep(0, n)
+dat <- data.frame(X=rep(0, n),
+                  Z1=rep(0, n),
+                  Z2=rep(0, n),
+                  Z3=rep(0, n),
+                  Tv=rep(0, n),
+                  Y=rep(0, n))
 
 for (i in 1:n){
+  #Binary confounders
+  dat$Z1[i] <- rbinom(1, 1, 0.4)
+  dat$Z2[i] <- rbinom(1, 1, 0.2)
+  dat$Z3[i] <- rbinom(1, 1, 0.6)
   
-  Z1[i] <- rbinom(1, 1, 0.4)
-  Z2[i] <- rbinom(1, 1, 0.2)
-  Z3[i] <- rbinom(1, 1, 0.6)
+  #Exposure
+  p_x <- 1/(1 + exp(-(-log(1/0.5 - 1) - log(2)*dat$Z1[i] + log(2)*0.4 + log(1.5)*dat$Z2[i] - log(1.5)*0.2 
+                      - log(3)*dat$Z3[i] + log(3)*0.6)))
+  dat$X[i] <- rbinom(1, 1, p_x)
   
-  p_x <- 1/(1 + exp(-(-log(1/0.5 - 1) - log(2)*Z1[i] + log(2)*0.4 + log(1.5)*Z2[i] - log(1.5)*0.2 - log(3)*Z3[i] + log(3)*0.6)))
-  X[i] <- rbinom(1, 1, p_x)
-  
-  p_t <- log(2)*X[i] - log(2)*Z1[i] + log(1.5)*Z2[i] - log(3)*Z3[i]
-  Tv[i] <- rexp(1, exp(0.01)*exp(p_t))
-  Y[i] <- ifelse(Tv[i] > K, 0, 1)
-  Tv[i] <- ifelse(Tv[i] > K, K, Tv[i])
+  #Outcome
+  p_t <- log(2)*dat$X[i] - log(2)*dat$Z1[i] + log(1.5)*dat$Z2[i] - log(3)*dat$Z3[i]
+  dat$Tv[i] <- rexp(1, exp(0.01)*exp(p_t))
+  dat$Y[i] <- ifelse(dat$Tv[i] > K, 0, 1)
+  dat$Tv[i] <- ifelse(dat$Tv[i] > K, K, dat$Tv[i])
 }
-dat <- data.frame(Z1, Z2, Z3, X, Tv, Y)
 
 
-### Observed survival
+###################################################################################################################################  
+# Observed survival
 
+sum(dat$Y)/n #P(Y=1) = 0.48
 surv_obs <- survfit(Surv(Tv, Y) ~ 1, data=dat)
 
 
-### Implement parametric g-formula for natural course
+###################################################################################################################################  
+# Run parametric g-formula
 
-mod.x <- glm(X ~ Z1 + Z2 + Z3, family=binomial(link="logit"), data=dat)
-mod.t <- flexsurvreg(Surv(Tv, Y) ~ X + Z1 + Z2 + Z3, data=dat, dist="exp")
+#Model exposure and the outcome
+  #Exposure
+  mod.x <- glm(X ~ Z1 + Z2 + Z3, family=binomial(link="logit"), data=dat)
+  
+  #Outcome: exponential AFT
+    #Why AFT? Time is continuous, and we don't want to discretize.
+    #Drawback: in real data, assuming time-to-event follows specified 
+    #          parametric distribution may be too restrictive
+  mod.t <- flexsurvreg(Surv(Tv, Y) ~ X + Z1 + Z2 + Z3, dist="exp", data=dat)
 
-MC0 <- dat[ , (names(dat) %in% c("X", "Z1", "Z2", "Z3"))]
-index <- sample(1:nrow(MC0), montecarlo, replace=TRUE)
-MC<-MC0[index,]
-MC$id<-1:montecarlo
-
-
-pgf <- function(i, data){
-  g_data <- data[data$id==i, ]
-  g_data$X2 <- as.numeric(predict(mod.x, newdata=g_data, type="response")>runif(1))
-
-  desX <- g_data[ , c("X", "Z1", "Z2", "Z3")]
-  time1 <- rexp(1, exp(coef(mod.t)[names(coef(mod.t))=="rate"])*
+#Simple  g-formula implementation: just predict from outcome model
+  #Predict from AFT model
+  t_pred1 <- rep(0, n)
+  for (i in 1:n) {
+    desX <- dat[i , c("X", "Z1", "Z2", "Z3")]
+    t_pred1[i]<-rexp(1, exp(coef(mod.t)[names(coef(mod.t))=="rate"])*
                     exp(coef(mod.t)[!names(coef(mod.t))=="rate"]%*%t(desX)))
+  }
+  t_pred1 <- ifelse(t_pred1>K, K, t_pred1)
+  delta1 <- ifelse(t_pred1<K, 1, 0)
+
+#Complex implementation: Monte Carlo (MC) resample and build follow-up
+  #In this simple simulation, MC implementation is likely unnecessary because 
+  #data and causal model are simple (time-fixed exposure, few confounders). 
+  #However, let's show what it looks like here, so we can build to more complex scenarios.
   
-  desX <- g_data[ , c("X2", "Z1", "Z2", "Z3")]
-  time2 <- rexp(1, exp(coef(mod.t)[names(coef(mod.t))=="rate"])*
-                  exp(coef(mod.t)[!names(coef(mod.t))=="rate"]%*%t(desX)))
+  #Resample with replacement
+  montecarlo <- 50000  #MC resample size
+  MC0 <- dat[ , (names(dat) %in% c("X", "Z1", "Z2", "Z3"))]   #Pull out baseline variables
+  MC <- MC0[sample(1:nrow(MC0), montecarlo, replace=TRUE), ]  #Sample with replacement
+  MC$id<-1:montecarlo  #Assign new IDs
   
-  time <- data.frame(time1, time2)
-  return(time)
-}
+  #Use pgf function to reconstruct follow-up for each person
+  pgf <- function(i, data){
+    #Pull out record for individual i
+    g_data <- data[data$id==i, ]
 
-T_pred <- lapply(1:montecarlo, function(x){pgf(x, MC)})
-T_pred <- do.call(rbind, T_pred)
-Y1 <- ifelse(T_pred[ , 1] > K, 0, 1)
-Y2 <- ifelse(T_pred[ , 2] > K, 0, 1)
-T1 <- ifelse(T_pred[ , 1] > K, K, T_pred[ , 1])
-T2 <- ifelse(T_pred[ , 2] > K, K, T_pred[ , 2])
+    #Predict time using observed exposure and confounders
+    desX <- g_data[ , c("X", "Z1", "Z2", "Z3")]
+    time1<-rexp(1, exp(coef(mod.t)[names(coef(mod.t))=="rate"])*
+                       exp(coef(mod.t)[!names(coef(mod.t))=="rate"]%*%t(desX)))
+    
+    #For time-fixed exposure, not necessary to predict exposure like this
+    #But will be necessary in time-varying settings, so let's see what happens here
+    g_data$X2 <- as.numeric(predict(mod.x, newdata=g_data, type="response")>runif(1))
+    desX <- g_data[ , c("X2", "Z1", "Z2", "Z3")] %>% 
+      rename(X=X2)
+    time2<-rexp(1, exp(coef(mod.t)[names(coef(mod.t))=="rate"])*
+                       exp(coef(mod.t)[!names(coef(mod.t))=="rate"]%*%t(desX)))
+    
+    time <- data.frame(time1, time2)
+    return(time)
+  }
+  
+  #Run pgf, looping over each observation
+  T_pred <- lapply(1:montecarlo, function(x){pgf(x, MC)})
+  T_pred <- do.call(rbind, T_pred)
+    #Outcome using MC-sampled exposure
+    delta2 <- ifelse(T_pred[ , 1] > K, 0, 1)
+    t_pred2 <- ifelse(T_pred[ , 1] > K, K, T_pred[ , 1])
+    #Outcome using predicted exposure
+    delta3 <- ifelse(T_pred[ , 2] > K, 0, 1)
+    t_pred3 <- ifelse(T_pred[ , 2] > K, K, T_pred[ , 2])
 
-### Estimate g-formula NC survival
+    
+###################################################################################################################################    
+# Estimate g-formula natural course survival
 
-surv_gform1 <- survfit(Surv(T1, Y1) ~ 1) #Using MC-sampled X
-surv_gform2 <- survfit(Surv(T2, Y2) ~ 1) #Using model-predicted X
+#Predict from model without MC resample 
+sum(delta1)/n #P(Y=1) = 0.47
+surv_gform1 <- survfit(Surv(t_pred1, delta1) ~ 1)
+    
+#Using MC-sampled exposure
+sum(delta2)/montecarlo #P(Y=1) = 0.47
+surv_gform2 <- survfit(Surv(t_pred2, delta2) ~ 1) 
+  
+#Using model-predicted exposure  
+sum(delta3)/montecarlo #P(Y=1) = 0.47
+surv_gform3 <- survfit(Surv(t_pred3, delta3) ~ 1) 
 
-### Compare survival curves
-
-surv <- list(Observed=surv_obs, Gformula1=surv_gform1, Gformula2=surv_gform2)
+#Compare survival curves
+surv <- list(Observed=surv_obs, Gformula1=surv_gform1, Gformula2=surv_gform2, Gformula3=surv_gform3)
 ggsurvplot(surv, combine=TRUE, xlim=c(0,1), ylim=c(0.50, 1.00), break.time.by=0.25,
-           legend=c(0.75,0.9), legend.title="", legend.labs=c("Observed natural course", 
-                                                               "\n G-formula natural course \n (MC-sampled exposure)",
-                                                               "\n G-formula natural course \n (model-predicted exposure)")) 
+           legend=c(0.75,0.8), legend.title="", legend.labs=c("Observed natural course", 
+                                                              "\n g-formula natural course \n (no MC-sampling)",
+                                                              "\n g-formula natural course \n (MC, sampled exposure)",
+                                                              "\n g-formula natural course \n (MC, model-predicted exposure)")) 
+
+#As the above are all equivalent, in future comparisons, choose faster no MC implementation
+surv <- list(Observed=surv_obs, Gformula1=surv_gform1)
+ggsurvplot(surv, combine=TRUE, xlim=c(0,1), ylim=c(0.50, 1.00), break.time.by=0.25,
+           legend=c(0.75,0.8), legend.title="", legend.labs=c("Observed natural course", 
+                                                              "\n g-formula natural course \n (no MC-sampling)")) 
 
 
