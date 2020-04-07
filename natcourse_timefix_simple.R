@@ -6,16 +6,18 @@
 #
 # Author: Jacqueline Rudolph
 #
-# Last Update: 01 apr 2020
+# Last Update: 06 apr 2020
 #
 ##################################################################################################
 
-# Things I could explore:
+# Things explored:
 #     - Including more variables than are necessary, esp. interaction terms
-#     - Being flexible in outcome model, even though not necessary
-#     - Leave variables out
+#     - Leaving variables out
 
-packages <- c("survival", "tidyverse", "flexsurv", "survminer")
+# Could be explored
+#     - Changing distribution of AFT model (but how to properly predict T?)
+
+packages <- c("survival", "tidyverse", "flexsurv", "survminer", "ggsci")
 
 for (package in packages) {
   update.packages(package, ask=F)
@@ -55,11 +57,16 @@ for (i in 1:n){
   dat$Tv[i] <- ifelse(dat$Tv[i] > K, K, dat$Tv[i])
 }
 
+  #If we want to include interactions
+  dat$XZ1 <- dat$X*dat$Z1
+  dat$XZ2 <- dat$X*dat$Z2
+  dat$XZ3 <- dat$X*dat$Z3
+
 
 ###################################################################################################################################  
 # Observed survival
 
-sum(dat$Y)/n #P(Y=1) = 0.48
+sum(dat$Y)/n #P(Y=1) = 0.4768
 surv_obs <- survfit(Surv(Tv, Y) ~ 1, data=dat)
 
 
@@ -93,7 +100,7 @@ surv_obs <- survfit(Surv(Tv, Y) ~ 1, data=dat)
   #However, let's show what it looks like here, so we can build to more complex scenarios.
   
   #Resample with replacement
-  montecarlo <- 50000  #MC resample size
+  montecarlo <- 10000  #MC resample size
   MC0 <- dat[ , (names(dat) %in% c("X", "Z1", "Z2", "Z3"))]   #Pull out baseline variables
   MC <- MC0[sample(1:nrow(MC0), montecarlo, replace=TRUE), ]  #Sample with replacement
   MC$id<-1:montecarlo  #Assign new IDs
@@ -135,15 +142,15 @@ surv_obs <- survfit(Surv(Tv, Y) ~ 1, data=dat)
 # Estimate g-formula natural course survival
 
 #Predict from model without MC resample 
-sum(delta1)/n #P(Y=1) = 0.47
+sum(delta1)/n #P(Y=1) = 0.4738
 surv_gform1 <- survfit(Surv(t_pred1, delta1) ~ 1)
     
 #Using MC-sampled exposure
-sum(delta2)/montecarlo #P(Y=1) = 0.47
+sum(delta2)/montecarlo #P(Y=1) = 0.4752
 surv_gform2 <- survfit(Surv(t_pred2, delta2) ~ 1) 
   
 #Using model-predicted exposure  
-sum(delta3)/montecarlo #P(Y=1) = 0.47
+sum(delta3)/montecarlo #P(Y=1) = 0.471
 surv_gform3 <- survfit(Surv(t_pred3, delta3) ~ 1) 
 
 #Compare survival curves
@@ -156,8 +163,9 @@ ggsurvplot(surv, combine=TRUE, xlim=c(0,1), ylim=c(0.50, 1.00), break.time.by=0.
 
 #As the above are all equivalent, in future comparisons, choose faster no MC implementation
 surv <- list(Observed=surv_obs, Gformula1=surv_gform1)
-ggsurvplot(surv, combine=TRUE, xlim=c(0,1), ylim=c(0.50, 1.00), break.time.by=0.25,
-           legend=c(0.75,0.8), legend.title="", legend.labs=c("Observed natural course", 
-                                                              "\n g-formula natural course \n (no MC-sampling)")) 
-
+pdf("~/Documents/Pitt Projects/Natural Course/results/timefix_simple.pdf", height=5, width=5)
+ggsurvplot(surv, combine=TRUE, xlim=c(0,1), ylim=c(0.50, 1.00), break.time.by=0.25, palette="JAMA",
+           legend=c(0.70,0.93), font.legend=c(12, "plain", "black"),
+           legend.title="", legend.labs=c("Observed natural course", "G-computation natural course")) 
+dev.off()
 
