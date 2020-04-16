@@ -6,7 +6,7 @@
 #
 # Author: Jacqueline Rudolph
 #
-# Last Update: 06 apr 2020
+# Last Update: 16 apr 2020
 #
 ##################################################################################################
 
@@ -17,7 +17,7 @@
 # Could be explored
 #     - Changing distribution of AFT model (but how to properly predict T?)
 
-packages <- c("survival", "tidyverse", "flexsurv", "survminer", "ggsci")
+packages <- c("survival", "tidyverse", "flexsurv", "survminer")
 
 for (package in packages) {
   update.packages(package, ask=F)
@@ -32,6 +32,7 @@ set.seed(123)
 n <- 5000       #Sample size
 K <- 1          #Maximum time
 
+#Empty data frame to hold data
 dat <- data.frame(X=rep(0, n),
                   Z1=rep(0, n),
                   Z2=rep(0, n),
@@ -41,26 +42,23 @@ dat <- data.frame(X=rep(0, n),
 
 for (i in 1:n){
   #Binary confounders
-  dat$Z1[i] <- rbinom(1, 1, 0.4)
-  dat$Z2[i] <- rbinom(1, 1, 0.2)
-  dat$Z3[i] <- rbinom(1, 1, 0.6)
+  dat$Z1[i] <- rbinom(1, 1, 0.4)  #P(Z1)=0.4
+  dat$Z2[i] <- rbinom(1, 1, 0.2)  #P(Z2)=0.2
+  dat$Z3[i] <- rbinom(1, 1, 0.6)  #P(Z3)=0.6
   
-  #Exposure
-  p_x <- 1/(1 + exp(-(-log(1/0.5 - 1) - log(2)*dat$Z1[i] + log(2)*0.4 + log(1.5)*dat$Z2[i] - log(1.5)*0.2 
-                      - log(3)*dat$Z3[i] + log(3)*0.6)))
+  #Exposure, P(X)=0.5
+  p_x <- 1/(1 + exp(-(-log(1/0.5 - 1) 
+                      - log(2)*dat$Z1[i] + log(2)*0.4      #Effect for Z1: RR=2
+                      + log(1.5)*dat$Z2[i] - log(1.5)*0.2  #Effect for Z2: RR=1.5  
+                      - log(3)*dat$Z3[i] + log(3)*0.6)))   #Effect for Z3: RR=3
   dat$X[i] <- rbinom(1, 1, p_x)
   
-  #Outcome
+  #Outcome, exponential with lambda=0.01
   p_t <- log(2)*dat$X[i] - log(2)*dat$Z1[i] + log(1.5)*dat$Z2[i] - log(3)*dat$Z3[i]
   dat$Tv[i] <- rexp(1, exp(0.01)*exp(p_t))
-  dat$Y[i] <- ifelse(dat$Tv[i] > K, 0, 1)
-  dat$Tv[i] <- ifelse(dat$Tv[i] > K, K, dat$Tv[i])
+    dat$Y[i] <- ifelse(dat$Tv[i] > K, 0, 1)
+    dat$Tv[i] <- ifelse(dat$Tv[i] > K, K, dat$Tv[i])
 }
-
-  #If we want to include interactions
-  dat$XZ1 <- dat$X*dat$Z1
-  dat$XZ2 <- dat$X*dat$Z2
-  dat$XZ3 <- dat$X*dat$Z3
 
 
 ###################################################################################################################################  
@@ -105,7 +103,7 @@ surv_obs <- survfit(Surv(Tv, Y) ~ 1, data=dat)
   MC <- MC0[sample(1:nrow(MC0), montecarlo, replace=TRUE), ]  #Sample with replacement
   MC$id<-1:montecarlo  #Assign new IDs
   
-  #Use pgf function to reconstruct follow-up for each person
+  #Use parametric g-formula (pgf) function to reconstruct follow-up for each person
   pgf <- function(i, data){
     #Pull out record for individual i
     g_data <- data[data$id==i, ]
@@ -127,7 +125,7 @@ surv_obs <- survfit(Surv(Tv, Y) ~ 1, data=dat)
     return(time)
   }
   
-  #Run pgf, looping over each observation
+  #Run pgf, looping over each observation in the MC resample
   T_pred <- lapply(1:montecarlo, function(x){pgf(x, MC)})
   T_pred <- do.call(rbind, T_pred)
     #Outcome using MC-sampled exposure
@@ -161,11 +159,12 @@ ggsurvplot(surv, combine=TRUE, xlim=c(0,1), ylim=c(0.50, 1.00), break.time.by=0.
                                                               "\n g-formula natural course \n (MC, sampled exposure)",
                                                               "\n g-formula natural course \n (MC, model-predicted exposure)")) 
 
-#As the above are all equivalent, in future comparisons, choose faster no MC implementation
+#As the above are all equivalent, in future choose faster no MC implementation
 surv <- list(Observed=surv_obs, Gformula1=surv_gform1)
 pdf("~/Documents/Pitt Projects/Natural Course/results/timefix_simple.pdf", height=5, width=5)
-ggsurvplot(surv, combine=TRUE, xlim=c(0,1), ylim=c(0.50, 1.00), break.time.by=0.25, palette="JAMA",
-           legend=c(0.70,0.93), font.legend=c(12, "plain", "black"),
-           legend.title="", legend.labs=c("Observed natural course", "G-computation natural course")) 
+ggsurvplot(surv, combine=TRUE, fun="event", xlim=c(0,1), break.time.by=0.25, ylab="Natural Course Risk", 
+           palette=c("dark gray", "black"), linetype="strata",
+           legend=c(0.2,0.93), font.legend=c(12, "plain", "black"),
+           legend.title="", legend.labs=c("Observed", "G-computation")) 
 dev.off()
 
