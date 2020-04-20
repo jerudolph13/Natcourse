@@ -1,6 +1,6 @@
 # Natcourse
 
-This github includes the R programs used for the examples in our paper on the Natural Course. 
+This github includes the R programs used for the examples in our paper on the natural course. 
 
   **natcourse_tfix_simple** : the simulated example with time-fixed exposure and few confounders 
 
