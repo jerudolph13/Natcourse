@@ -6,6 +6,8 @@ This github includes the R programs used for the examples in our paper on the na
   
   **natcourse_tvar_boot**  : program to estimate the natural course effect and ATE (RD plus 95% CI) for the above example 
   
+----------------------------------------------------------------------------------------------------------------------------  
+  
 There are additionally the following depracated programs no longer used in the paper:
 
   **natcourse_tfix_simple** : the simulated example with time-fixed exposure and few confounders 
