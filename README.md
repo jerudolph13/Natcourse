@@ -8,7 +8,7 @@ This github includes the R programs used for the examples in our paper on the na
   
 ----------------------------------------------------------------------------------------------------------------------------  
   
-There are additionally the following depracated programs no longer used in the paper:
+There are additionally the following depracated programs in the tfix ("time-fixed") directory that are no longer used in the paper:
 
   **natcourse_tfix_simple** : the simulated example with time-fixed exposure and few confounders 
 
