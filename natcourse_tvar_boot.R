@@ -7,12 +7,12 @@
 #
 # Author: Jacqueline Rudolph
 #
-# Last Update: 31 Mar 2020
+# Last Update: 06 Apr 2021
 #
 ############################################################################################## 
 
 
-packages <- c("survival", "tidyverse", "survminer", "splines", "parallel", "doParallel")
+packages <- c("survival", "tidyverse", "survminer", "splines", "parallel")
 for (package in packages) {
   update.packages(package, ask=F)
   library(package, character.only=T)
