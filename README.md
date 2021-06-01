@@ -2,9 +2,15 @@
 
 This github includes the R programs used for the examples in our paper on the natural course. 
 
-  **natcourse_tvar_eager** : program to estimate the observed natural course and g-computation estimated natural course in our  time-varying EAGeR example (compliance exposure and pregnancy outcome)
+  **natcourse_1_data** : reads in the EAGeR data and manipulates as needed for analysis
   
-  **natcourse_tvar_boot**  : program to estimate the natural course effect and ATE (risk difference & 95% CI) for the above example 
+  **natcourse_2_descr** : generates descriptive summaries of the EAGeR data
+
+  **natcourse_3_noboot** : estimates the observed natural course and g-computation estimated natural course (without CI)
+  
+  **natcourse_4_boot**  :  estimates the natural course effect and ATE (risk difference & 95% CI)
+  
+  **natcourse_5_results** : summarizes and visualizes results
   
 ----------------------------------------------------------------------------------------------------------------------------  
   
